@@ -106,6 +106,11 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
         mreq.imr_multiaddr.s_addr = ((SOCKADDR_IN*)resmulti->ai_addr)->sin_addr.s_addr;
         setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, (int)sizeof(mreq));
 
+        /* pitfall:
+        ** Don't use connect to establish tuple with multicast addr, even through
+        ** connect will succeed, and after thus, you can use 'send' to send multicast,
+        ** but you never recv any data with this socket.
+        */
         if (sendto(s, buffer, strlen(buffer), 0, resmulti->ai_addr, resmulti->ai_addrlen) ==
             SOCKET_ERROR)
             break;
@@ -125,7 +130,9 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
         bytes_transferred = recvfrom(s, buffer, sizeof(buffer), 0, (struct sockaddr*)&safrom, &fromlen);
         if (bytes_transferred <= 0)
             break;
-
+        
+        // The 'safrom' is a real host address, if you wan't only communicate with it,
+        // Now you can use connect to establish tuple with 'safrom'
         last = buffer + bytes_transferred - 1;
         while (*last == '\n' || *last == '\r')
         {
