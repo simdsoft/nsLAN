@@ -13,22 +13,33 @@
 
 #if defined(_DEBUG)
 #pragma comment(lib, "ws2_32.lib")
+#if !defined(UNICODE)
 #pragma comment(lib, "nsis/pluginapi-x86-ansi.lib")
+#else
+#pragma comment(lib, "nsis/pluginapi-x86-unicode.lib")
+#endif
 #endif
 
-struct addrinfo* nsLanGetAddrInfo(char* addr, char* port, int af, int type, int proto)
+#if !defined(UNICODE)
+#define XADDRINFO addrinfo
+#else
+#define XADDRINFO addrinfoW
+#endif
+
+#define NSLAN_MAX_LEN 128
+
+struct XADDRINFO* nsLanGetAddrInfo(TCHAR* addr, TCHAR* port, int af, int type, int proto)
 {
-    struct addrinfo hints, * res = NULL;
+    struct XADDRINFO hints, * res = NULL;
 
     int             rc;
-
     memset(&hints, 0, sizeof(hints));
     hints.ai_flags = ((addr) ? 0 : AI_PASSIVE);
     hints.ai_family = af;
     hints.ai_socktype = type;
     hints.ai_protocol = proto;
 
-    rc = getaddrinfo(addr, port, &hints, &res);
+    rc = GetAddrInfo(addr, port, &hints, &res);
     if (rc == 0)
         return res;
     return NULL;
@@ -48,18 +59,25 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
     // and the second time would give you read.txt.
     // you should empty the stack of your parameters, and ONLY your
     // parameters.
-    char mcastIP[256] = "224.0.0.19";
-    char mcastPort[sizeof("65535")] = "20524";
-    char buffer[256];
+    TCHAR mcastIP[128]; // = _TEXT("224.0.0.19");
+    TCHAR mcastPort[sizeof("65535")]; // = _TEXT("20524");
+	TCHAR message[128];
+
+	TCHAR* response = NULL;
+#if !defined(UNICODE)
+	char* buffer = message;
+#else
+	char buffer[NSLAN_MAX_LEN];
+#endif
     int timeo            = 0; // seconds
     struct timeval tmval = {0};
 
-    const char* error = "fail";
+    const TCHAR* error = _TEXT("fail");
 
     SOCKET s              = INVALID_SOCKET;
     int bytes_transferred = -1;
     fd_set fds_rd;
-    struct addrinfo *resmulti = NULL, *resbind = NULL; //, * resif = NULL;
+    struct XADDRINFO *resmulti = NULL, *resbind = NULL; //, * resif = NULL;
     struct ip_mreq mreq;                               // for multicast
     int loopback              = 1;                     // for test, enable it.
     int ttl                   = 128;
@@ -67,12 +85,14 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
     unsigned long nonblocking = 1;
     SOCKADDR_STORAGE safrom   = {0};
     int fromlen = sizeof(safrom);
+	int msglen = 0;
+	int resplen = 0;
 
     EXDLL_INIT();
 
-    PopStringA(mcastIP);
-    PopStringA(mcastPort);
-    PopStringA(buffer);
+    popstringn(mcastIP, NSLAN_MAX_LEN);
+    popstringn(mcastPort, sizeof("65535"));
+    popstringn(message, NSLAN_MAX_LEN);
     timeo        = popint();
     tmval.tv_sec = timeo;
 
@@ -89,7 +109,7 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
             break;
 
         resbind =
-            nsLanGetAddrInfo("0.0.0.0", "0", resmulti->ai_family, resmulti->ai_socktype, resmulti->ai_protocol);
+            nsLanGetAddrInfo(_TEXT("0.0.0.0"), NULL, resmulti->ai_family, resmulti->ai_socktype, resmulti->ai_protocol);
         if (!resbind)
             break;
 
@@ -106,12 +126,16 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
         mreq.imr_multiaddr.s_addr = ((SOCKADDR_IN*)resmulti->ai_addr)->sin_addr.s_addr;
         setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, (int)sizeof(mreq));
 
+		msglen = lstrlen(message);
+#if defined(UNICODE)
+	    msglen = WideCharToMultiByte(CP_ACP, 0, message, msglen, buffer, sizeof(buffer), NULL, NULL);
+#endif
         /* pitfall:
         ** Don't use connect to establish tuple with multicast addr, even through
         ** connect will succeed, and after thus, you can use 'send' to send multicast,
         ** but you never recv any data with this socket.
         */
-        if (sendto(s, buffer, strlen(buffer), 0, resmulti->ai_addr, resmulti->ai_addrlen) ==
+        if (sendto(s, buffer, msglen, 0, resmulti->ai_addr, resmulti->ai_addrlen) ==
             SOCKET_ERROR)
             break;
 
@@ -139,6 +163,13 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
             *last = '\0';
             --last;
         }
+#if !defined(UNICODE)
+		response = buffer;
+#else
+		resplen = MultiByteToWideChar(CP_ACP, 0, buffer, sizeof(buffer), message, NSLAN_MAX_LEN);
+	    response = message;
+		response[0] = '\0';
+#endif
 
         error = NULL;
     } while (0);
@@ -146,14 +177,14 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
     if (s != INVALID_SOCKET)
         closesocket(s);
 
-    freeaddrinfo(resmulti);
-    freeaddrinfo(resbind);
+    FreeAddrInfo(resmulti);
+    FreeAddrInfo(resbind);
     WSACleanup();
 
     if (error == NULL)
-        PushStringA(buffer);
+        pushstring(response);
     else
-        PushStringA(error);
+        pushstring(error);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hInst, ULONG ul_reason_for_call, LPVOID lpReserved)
