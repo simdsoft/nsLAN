@@ -71,7 +71,11 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
     fd_set fds_rd;
     struct NSL_ADDRINFO *resmulti = NULL, *resbind = NULL; //, * resif = NULL;
     struct ip_mreq mreq;                               // for multicast
+#if defined(_DEBUG)
     int loopback              = 1;                     // for test, enable it.
+#else
+    int loopback              = 0;
+#endif
     int ttl                   = 128;
     char* last                = NULL;
     unsigned long nonblocking = 1;
