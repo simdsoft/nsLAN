@@ -1,36 +1,28 @@
 // nsLAN.c
-// V1.0
+// V1.1
+#define WIN32_LEAN_AND_MEAN
 #  include <WinSock2.h>
-
 #  include <Windows.h>
-#  if defined(_WIN32) && !defined(_WINSTORE)
-#    include <Mswsock.h>
-#    include <Mstcpip.h>
-#  endif
+#  include <Mswsock.h>
+#  include <Mstcpip.h>
 #  include <Ws2tcpip.h>
-#  include <Wspiapi.h>
 #include "nsis/pluginapi.h" // nsis plugin
 
 #if defined(_DEBUG)
 #pragma comment(lib, "ws2_32.lib")
-#if !defined(UNICODE)
-#pragma comment(lib, "nsis/pluginapi-x86-ansi.lib")
-#else
-#pragma comment(lib, "nsis/pluginapi-x86-unicode.lib")
-#endif
 #endif
 
 #if !defined(UNICODE)
-#define XADDRINFO addrinfo
+#define NSL_ADDRINFO addrinfo
 #else
-#define XADDRINFO addrinfoW
+#define NSL_ADDRINFO addrinfoW
 #endif
 
-#define NSLAN_MAX_LEN 128
+#define NSL_MAX_LEN 128
 
-struct XADDRINFO* nsLanGetAddrInfo(TCHAR* addr, TCHAR* port, int af, int type, int proto)
+struct NSL_ADDRINFO* nslGetAddrInfo(TCHAR* addr, TCHAR* port, int af, int type, int proto)
 {
-    struct XADDRINFO hints, * res = NULL;
+    struct NSL_ADDRINFO hints, * res = NULL;
 
     int             rc;
     memset(&hints, 0, sizeof(hints));
@@ -59,15 +51,15 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
     // and the second time would give you read.txt.
     // you should empty the stack of your parameters, and ONLY your
     // parameters.
-    TCHAR mcastIP[128]; // = _TEXT("224.0.0.19");
+    TCHAR mcastIP[NSL_MAX_LEN]; // = _TEXT("224.0.0.19");
     TCHAR mcastPort[sizeof("65535")]; // = _TEXT("20524");
-	TCHAR message[128];
+	TCHAR message[NSL_MAX_LEN];
 
 	TCHAR* response = NULL;
 #if !defined(UNICODE)
 	char* buffer = message;
 #else
-	char buffer[NSLAN_MAX_LEN];
+	char buffer[NSL_MAX_LEN];
 #endif
     int timeo            = 0; // seconds
     struct timeval tmval = {0};
@@ -77,7 +69,7 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
     SOCKET s              = INVALID_SOCKET;
     int bytes_transferred = -1;
     fd_set fds_rd;
-    struct XADDRINFO *resmulti = NULL, *resbind = NULL; //, * resif = NULL;
+    struct NSL_ADDRINFO *resmulti = NULL, *resbind = NULL; //, * resif = NULL;
     struct ip_mreq mreq;                               // for multicast
     int loopback              = 1;                     // for test, enable it.
     int ttl                   = 128;
@@ -90,9 +82,9 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
 
     EXDLL_INIT();
 
-    popstringn(mcastIP, NSLAN_MAX_LEN);
+    popstringn(mcastIP, NSL_MAX_LEN);
     popstringn(mcastPort, sizeof("65535"));
-    popstringn(message, NSLAN_MAX_LEN);
+    popstringn(message, NSL_MAX_LEN);
     timeo        = popint();
     tmval.tv_sec = timeo;
 
@@ -100,7 +92,7 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
 
     do
     {
-        resmulti = nsLanGetAddrInfo(mcastIP, mcastPort, AF_INET, SOCK_DGRAM, 0);
+        resmulti = nslGetAddrInfo(mcastIP, mcastPort, AF_INET, SOCK_DGRAM, 0);
         if (!resmulti)
             break;
 
@@ -109,7 +101,7 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
             break;
 
         resbind =
-            nsLanGetAddrInfo(_TEXT("0.0.0.0"), NULL, resmulti->ai_family, resmulti->ai_socktype, resmulti->ai_protocol);
+            nslGetAddrInfo(_TEXT("0.0.0.0"), NULL, resmulti->ai_family, resmulti->ai_socktype, resmulti->ai_protocol);
         if (!resbind)
             break;
 
@@ -128,7 +120,7 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
 
 		msglen = lstrlen(message);
 #if defined(UNICODE)
-	    msglen = WideCharToMultiByte(CP_ACP, 0, message, msglen, buffer, sizeof(buffer), NULL, NULL);
+	    msglen = WideCharToMultiByte(CP_ACP, 0, message, msglen, buffer, NSL_MAX_LEN, NULL, NULL);
 #endif
         /* pitfall:
         ** Don't use connect to establish tuple with multicast addr, even through
@@ -151,7 +143,7 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
             break;
 
         // ready read the reply msg
-        bytes_transferred = recvfrom(s, buffer, sizeof(buffer), 0, (struct sockaddr*)&safrom, &fromlen);
+        bytes_transferred = recvfrom(s, buffer, NSL_MAX_LEN, 0, (struct sockaddr*)&safrom, &fromlen);
         if (bytes_transferred <= 0)
             break;
         
@@ -166,9 +158,8 @@ void __declspec(dllexport) SendMulticastRequest(HWND hwndParent, int string_size
 #if !defined(UNICODE)
 		response = buffer;
 #else
-		resplen = MultiByteToWideChar(CP_ACP, 0, buffer, sizeof(buffer), message, NSLAN_MAX_LEN);
+		resplen = MultiByteToWideChar(CP_ACP, 0, buffer, sizeof(buffer), message, NSL_MAX_LEN);
 	    response = message;
-		response[0] = '\0';
 #endif
 
         error = NULL;
